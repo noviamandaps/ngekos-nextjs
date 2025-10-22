@@ -2,11 +2,21 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getKosById } from "@/lib/kosData";
 
-export default function ContinueBooking() {
+// Komponen loading sederhana
+function LoadingBooking() {
+  return (
+    <div className="flex flex-col items-center justify-center h-screen gap-4">
+      <p className="text-lg font-medium">Loading...</p>
+    </div>
+  );
+}
+
+// Komponen yang menggunakan useSearchParams
+function BookingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const kosId = searchParams.get("kosId") || "kos-3";
@@ -14,6 +24,20 @@ export default function ContinueBooking() {
 
   const kosData = getKosById(kosId);
   const selectedRoom = kosData?.rooms.find(r => r.id === roomId);
+  
+  return { kosData, selectedRoom, router };
+}
+
+export default function ContinueBooking() {
+  return (
+    <Suspense fallback={<LoadingBooking />}>
+      <ContinueBookingContent />
+    </Suspense>
+  );
+}
+
+function ContinueBookingContent() {
+  const { kosData, selectedRoom, router } = BookingContent();
   const [showSuccess, setShowSuccess] = useState(false);
 
   // Get today's date and one month later for default dates
