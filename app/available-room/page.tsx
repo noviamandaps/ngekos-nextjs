@@ -2,15 +2,38 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { getKosById } from "@/lib/kosData";
 
-export default function AvailableRoom() {
+// Komponen yang menggunakan useSearchParams
+function RoomContent() {
   const searchParams = useSearchParams();
   const kosId = searchParams.get("kosId") || "kos-3";
   const kosData = getKosById(kosId);
+  
+  return { kosData };
+}
 
+// Komponen loading sederhana
+function LoadingRoom() {
+  return (
+    <div className="flex flex-col items-center justify-center h-screen gap-4">
+      <p className="text-lg font-medium">Loading...</p>
+    </div>
+  );
+}
+
+export default function AvailableRoom() {
+  return (
+    <Suspense fallback={<LoadingRoom />}>
+      <AvailableRoomContent />
+    </Suspense>
+  );
+}
+
+function AvailableRoomContent() {
+  const { kosData } = RoomContent();
   const [selectedRoom, setSelectedRoom] = useState<string>("");
 
   if (!kosData) {
@@ -161,7 +184,7 @@ export default function AvailableRoom() {
             id="continue-button"
             className="fixed bottom-0 left-0 right-0 w-full mb-[30px] px-5 max-w-[640px] mx-auto"
           >
-            <Link href={selectedRoom ? `/continue-booking?kosId=${kosId}&roomId=${selectedRoom}` : "#"}>
+            <Link href={selectedRoom ? `/continue-booking?kosId=${kosData.id}&roomId=${selectedRoom}` : "#"}>
               <button
                 type="button"
                 disabled={!selectedRoom}
