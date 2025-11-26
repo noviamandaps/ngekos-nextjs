@@ -2,17 +2,73 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
-import { getKosById } from "@/lib/kosData";
+import { apiClient } from "@/lib/api-client";
 
-// Komponen yang menggunakan useSearchParams
-function RoomContent() {
+interface KosProperty {
+  id: string;
+  name: string;
+  location: string;
+  city: string;
+  type: string;
+  capacity: string;
+  price: number;
+  priceFormatted: string;
+  rating: number;
+  image: string;
+  images: string[];
+  rooms: Array<{
+    id: string;
+    name: string;
+    image: string;
+    people: string;
+    size: string;
+    price: number;
+    priceFormatted: string;
+    available: boolean;
+  }>;
+}
+
+// Normalize image src to be compatible with next/image
+function resolveImageSrc(src?: string) {
+  if (!src) return "/images/thumbnails/home1.png";
+  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("/")) return src;
+  return `/images/thumbnails/${src}`;
+}
+
+// Data loader using API
+function useKosData() {
   const searchParams = useSearchParams();
-  const kosId = searchParams.get("kosId") || "kos-3";
-  const kosData = getKosById(kosId);
-  
-  return { kosData };
+  const kosId = searchParams.get("kosId") || "";
+  const [kosData, setKosData] = useState<KosProperty | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!kosId) {
+        setError("Invalid property ID");
+        setLoading(false);
+        return;
+      }
+      try {
+        const response = await apiClient.getProperty(kosId);
+        if (response.success && response.data) {
+          setKosData(response.data as KosProperty);
+        } else {
+          setError(response.error?.message || "Property not found");
+        }
+      } catch (err) {
+        setError("Failed to load property");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [kosId]);
+
+  return { kosData, loading, error };
 }
 
 // Komponen loading sederhana
@@ -33,10 +89,21 @@ export default function AvailableRoom() {
 }
 
 function AvailableRoomContent() {
-  const { kosData } = RoomContent();
+  const { kosData, loading, error } = useKosData();
   const [selectedRoom, setSelectedRoom] = useState<string>("");
 
-  if (!kosData) {
+  if (loading) {
+    return (
+      <div className="mx-auto min-h-screen max-w-[640px] px-5 pb-9 pt-[60px] relative bg-white">
+        <div className="flex flex-col items-center justify-center h-screen gap-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-ngekos-orange"></div>
+          <p className="text-lg font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!kosData || error) {
     return (
       <div className="mx-auto min-h-screen max-w-[640px] px-5 pb-9 pt-[60px] relative bg-white">
         <div className="flex flex-col items-center justify-center h-screen gap-4">
@@ -81,7 +148,7 @@ function AvailableRoomContent() {
           <div className="flex items-center w-full rounded-[30px] p-4 border gap-4 bg-white">
             <div className="w-[120px] h-[132px] overflow-hidden rounded-[30px] flex-shrink-0">
               <Image
-                src={kosData.image}
+                src={resolveImageSrc(kosData.image)}
                 className="w-full h-full object-cover"
                 alt={`Photo of ${kosData.name}`}
                 width={120}
@@ -136,9 +203,9 @@ function AvailableRoomContent() {
                   <div className="flex items-center w-full rounded-[30px] p-4 border gap-4 bg-white hover:border-ngekos-green hover:border transition-all duration-300 peer-checked:border-ngekos-green">
                     <div className="w-[120px] h-[156px] overflow-hidden rounded-[30px] flex-shrink-0">
                       <Image
-                        src={`/images/thumbnails/${room.image}`}
+                        src={resolveImageSrc(room.image)}
                         className="w-full h-full object-cover"
-                        alt="thumbnail"
+                        alt={`Room ${room.name}`}
                         width={120}
                         height={156}
                       />
@@ -170,7 +237,7 @@ function AvailableRoomContent() {
                       </div>
                       <hr className="bg-[#F1F2F6]" />
                       <div className="flex items-center">
-                        <p className="text-ngekos-orange font-semibold">Rp {room.price.toLocaleString()}</p>
+                        <p className="text-ngekos-orange font-semibold">{room.priceFormatted}</p>
                         <p className="text-ngekos-gray text-sm">/bulan</p>
                       </div>
                     </div>

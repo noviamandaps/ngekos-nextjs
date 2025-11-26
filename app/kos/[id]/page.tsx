@@ -3,22 +3,121 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
-import { getKosById } from "@/lib/kosData";
+import { useState, useEffect } from "react";
+import { apiClient } from "@/lib/api-client";
+import ReviewsSection from "./ReviewsSection";
+
+interface KosProperty {
+  id: string;
+  name: string;
+  location: string;
+  city: string;
+  address: string;
+  type: string;
+  capacity: string;
+  price: number;
+  priceFormatted: string;
+  rating: number;
+  image: string;
+  images: string[];
+  description?: string;
+  owner: {
+    name: string;
+    phone: string;
+    email: string;
+  };
+  facilities: Array<{ name: string; icon: string }>;
+  rooms: Array<{
+    id: string;
+    name: string;
+    image: string;
+    people: string;
+    size: string;
+    price: number;
+    priceFormatted: string;
+    available: boolean;
+  }>;
+  rules: string[];
+}
 
 export default function KosDetail() {
   const params = useParams();
   const router = useRouter();
-  const kosId = params.id as string;
-  const kosData = getKosById(kosId);
+  const kosId = (params.id as string) || '';
+  const [kosData, setKosData] = useState<KosProperty | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || '';
 
-  if (!kosData) {
+  const toAbsoluteUrl = (url: string): string => {
+    if (!url) return ''
+    // Already absolute
+    if (/^https?:\/\//i.test(url)) return url
+    // Ensure leading slash
+    const path = url.startsWith('/') ? url : `/${url}`
+    // If baseUrl provided, normalize and join
+    if (baseUrl) {
+      const normalizedBase = baseUrl.replace(/\/$/, '')
+      return `${normalizedBase}${path}`
+    }
+    // Fallback to relative path
+    return path
+  }
+
+  useEffect(() => {
+    if (!kosId) {
+      setError("Invalid property ID");
+      setLoading(false);
+      return;
+    }
+
+    const fetchKosData = async () => {
+      try {
+        const response = await apiClient.getProperty(kosId);
+        if (response.success && response.data) {
+          setKosData(response.data as KosProperty);
+        } else {
+          setError("Property not found");
+        }
+      } catch (err) {
+        setError("Failed to load property details");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchKosData();
+  }, [kosId]);
+
+  if (loading) {
     return (
       <div className="mx-auto min-h-screen max-w-[640px] px-5 pb-9 pt-[60px] relative bg-white">
         <div className="flex flex-col items-center justify-center h-screen gap-4">
-        
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-ngekos-orange"></div>
+          <p className="text-ngekos-gray">Loading property details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!kosData || error) {
+    return (
+      <div className="mx-auto min-h-screen max-w-[640px] px-5 pb-9 pt-[60px] relative bg-white">
+        <div className="flex flex-col items-center justify-center h-screen gap-4">
+          <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-ngekos-almostwhite">
+            <Image
+              src="/images/icons/home.svg"
+              alt="Not found icon"
+              width={48}
+              height={48}
+              className="h-12 w-12 object-contain opacity-50"
+            />
+          </div>
           <h2 className="text-xl font-bold text-ngekos-black">Kos Not Found</h2>
+          <p className="text-ngekos-gray text-center">
+            {error || "The property you're looking for doesn't exist or has been removed."}
+          </p>
           <Link href="/">
             <button className="rounded-full px-6 py-3 bg-ngekos-orange text-white font-semibold">
               Back to Home
@@ -29,8 +128,52 @@ export default function KosDetail() {
     );
   }
 
+  const jsonLd = kosData
+    ? {
+        "@context": "https://schema.org",
+        "@type": "LodgingBusiness",
+        name: kosData.name,
+        description: kosData.description || "",
+        image:
+          kosData.images && kosData.images.length > 0
+            ? kosData.images.map(toAbsoluteUrl)
+            : [toAbsoluteUrl(kosData.image)],
+        address: {
+          "@type": "PostalAddress",
+          streetAddress: kosData.address,
+          addressLocality: kosData.city || kosData.location || "",
+          addressCountry: "ID",
+        },
+        telephone: kosData.owner?.phone || "",
+        priceRange: `IDR ${kosData.price?.toLocaleString("id-ID")}`,
+        aggregateRating: {
+          "@type": "AggregateRating",
+          ratingValue: kosData.rating,
+          reviewCount: 1,
+        },
+        offers: (kosData.rooms || []).map((room) => ({
+          "@type": "Offer",
+          priceCurrency: "IDR",
+          price: room.price,
+          availability: room.available ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+          itemOffered: {
+            "@type": "HotelRoom",
+            name: room.name,
+          },
+          url: toAbsoluteUrl(`/available-room?kosId=${kosData.id}`),
+        })),
+      }
+    : null;
+
   return (
     <div className="mx-auto min-h-screen max-w-[640px] pb-9 relative bg-white">
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          id="jsonld-kos"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      )}
       {/* Header with back button - Fixed */}
       <header className="fixed top-0 left-0 right-0 z-40 mx-auto max-w-[640px]">
         <div className="flex h-[60px] items-center justify-between px-5 bg-gradient-to-b from-black/50 to-transparent">
@@ -56,6 +199,8 @@ export default function KosDetail() {
           width={640}
           height={350}
           className="h-full w-full object-cover"
+          sizes="(max-width: 640px) 100vw, 640px"
+          priority
         />
         {/* Image indicators */}
         <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-2">
@@ -160,7 +305,7 @@ export default function KosDetail() {
               <div key={index} className="flex flex-col items-center gap-2 rounded-[22px] bg-ngekos-almostwhite p-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
                   <Image
-                    src={`/images/icons/${facility.icon}`}
+                    src={facility.icon.startsWith('/') ? facility.icon : `/images/icons/${facility.icon}`}
                     alt={`${facility.name} icon`}
                     width={20}
                     height={20}
@@ -191,6 +336,7 @@ export default function KosDetail() {
                     width={80}
                     height={80}
                     className="h-full w-full object-cover"
+                    sizes="80px"
                   />
                 </div>
                 <div className="flex-grow space-y-1">
@@ -201,13 +347,18 @@ export default function KosDetail() {
                     <span>{room.size}</span>
                   </div>
                   <p className="text-ngekos-orange font-semibold">
-                    Rp {room.price}
+                    {room.priceFormatted}
                     <span className="text-ngekos-gray text-xs font-normal">/month</span>
                   </p>
                 </div>
               </div>
             ))}
           </div>
+        </section>
+
+        {/* Reviews */}
+        <section className="rounded-[30px] border border-[#F1F2F6] bg-white p-5 shadow-sm space-y-4">
+          <ReviewsSection kosId={kosData.id} />
         </section>
 
         {/* House rules */}
@@ -253,6 +404,33 @@ export default function KosDetail() {
                 <p className="font-medium text-ngekos-black">{kosData.owner.phone}</p>
               </div>
             </div>
+            {/* WhatsApp contact button */}
+            {kosData.owner.phone && (
+              <div className="pt-2">
+                {(() => {
+                  const digits = (kosData.owner.phone || '').replace(/\D/g, '')
+                  const waNumber = digits.startsWith('0') ? `62${digits.slice(1)}` : digits
+                  const waUrl = `https://wa.me/${waNumber}`
+                  return (
+                    <a
+                      href={waUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 bg-[#25D366] text-white font-semibold hover:opacity-90"
+                    >
+                      <Image
+                        src="/images/icons/notification.svg"
+                        alt="WhatsApp"
+                        width={16}
+                        height={16}
+                        className="h-4 w-4"
+                      />
+                      Chat via WhatsApp
+                    </a>
+                  )
+                })()}
+              </div>
+            )}
           </div>
         </section>
       {/* Bottom booking bar */}
@@ -263,7 +441,7 @@ export default function KosDetail() {
               <div>
                 <p className="text-ngekos-gray text-xs">Starting from</p>
                 <p className="text-ngekos-orange text-xl font-bold">
-                  {kosData.price}
+                  {kosData.priceFormatted}
                   <span className="text-ngekos-gray text-sm font-normal">/month</span>
                 </p>
               </div>

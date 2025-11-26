@@ -2,84 +2,64 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { apiClient } from "@/lib/api-client";
 
 export default function Notifications() {
   const [activeTab, setActiveTab] = useState<"all" | "bookings" | "promotions">("all");
-  const [notificationsList, setNotificationsList] = useState([
-    {
-      id: 1,
-      type: "booking",
-      title: "Booking Confirmed",
-      message: "Your booking at Tumbuh Tentram Berada Rumah Nenek has been confirmed!",
-      time: "2 hours ago",
-      read: false,
-      icon: "order.svg",
-    },
-    {
-      id: 2,
-      type: "promotion",
-      title: "Special Discount 20%",
-      message: "Get 20% off for your next booking. Valid until end of month!",
-      time: "5 hours ago",
-      read: false,
-      icon: "notification.svg",
-    },
-    {
-      id: 3,
-      type: "booking",
-      title: "Payment Successful",
-      message: "Payment of Rp 4.593.444 has been received. Thank you!",
-      time: "1 day ago",
-      read: true,
-      icon: "order.svg",
-    },
-    {
-      id: 4,
-      type: "booking",
-      title: "Check-in Reminder",
-      message: "Your check-in date is approaching on 15 Jan 2025. Don't forget!",
-      time: "2 days ago",
-      read: true,
-      icon: "notification.svg",
-    },
-    {
-      id: 5,
-      type: "promotion",
-      title: "New Properties Available",
-      message: "Check out 5 new properties in Jakarta Selatan area!",
-      time: "3 days ago",
-      read: true,
-      icon: "in-hotels.svg",
-    },
-    {
-      id: 6,
-      type: "booking",
-      title: "Review Request",
-      message: "How was your stay? Share your experience and help others!",
-      time: "1 week ago",
-      read: true,
-      icon: "star.svg",
-    },
-  ]);
+  const [items, setItems] = useState<any[]>([]);
+  const [page, setPage] = useState(1);
+  const [limit] = useState(10);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  const markAllRead = () => {
-    setNotificationsList(
-      notificationsList.map((notification) => ({
-        ...notification,
-        read: true,
-      }))
-    );
+  const fetchNotifications = async (reset = false) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const resp = await apiClient.getNotifications({ page, limit });
+      if (resp.success && resp.data) {
+        const data = resp.data as any[];
+        setItems(reset ? data : [...items, ...data]);
+        const pg = (resp.pagination || { page, totalPages: 1, unreadCount: 0 }) as any;
+        setHasMore(pg.page < pg.totalPages);
+        setUnreadCount(pg.unreadCount || 0);
+      } else {
+        setItems([]);
+        setUnreadCount(0);
+      }
+    } catch (e: any) {
+      setError(e?.message || "Gagal memuat notifikasi");
+      setItems([]);
+      setUnreadCount(0);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const filteredNotifications =
-    activeTab === "all"
-      ? notificationsList
-      : activeTab === "bookings"
-      ? notificationsList.filter((n) => n.type === "booking")
-      : notificationsList.filter((n) => n.type === "promotion");
+  useEffect(() => {
+    fetchNotifications(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
 
-  const unreadCount = notificationsList.filter((n) => !n.read).length;
+  const markAllRead = async () => {
+    const prev = items;
+    setItems((list) => list.map((n) => ({ ...n, read: true })));
+    setUnreadCount(0);
+    try {
+      await apiClient.markAllNotificationsRead();
+    } catch {
+      setItems(prev);
+    }
+  };
+
+  const filteredNotifications = useMemo(() => {
+    if (activeTab === "bookings") return items.filter((n) => n.type === "booking");
+    if (activeTab === "promotions") return items.filter((n) => n.type === "promotion");
+    return items;
+  }, [items, activeTab]);
 
   return (
     <div className="mx-auto min-h-screen max-w-[640px] px-5 pb-9 pt-[60px] relative bg-white">
@@ -134,19 +114,19 @@ export default function Notifications() {
 
           {/* Filter tabs */}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-            {[
-              { id: "all", label: "All", count: notificationsList.length },
-              {
-                id: "bookings",
-                label: "Bookings",
-                count: notificationsList.filter((n) => n.type === "booking").length,
-              },
-              {
-                id: "promotions",
-                label: "Promotions",
-                count: notificationsList.filter((n) => n.type === "promotion").length,
-              },
-            ].map((tab) => (
+              {[
+                { id: "all", label: "All", count: items.length },
+                {
+                  id: "bookings",
+                  label: "Bookings",
+                  count: items.filter((n) => n.type === "booking").length,
+                },
+                {
+                  id: "promotions",
+                  label: "Promotions",
+                  count: items.filter((n) => n.type === "promotion").length,
+                },
+              ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as typeof activeTab)}
@@ -173,7 +153,23 @@ export default function Notifications() {
 
         {/* Notifications list */}
         <section className="flex flex-col gap-3">
-          {filteredNotifications.length > 0 ? (
+          {loading && (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ngekos-orange"></div>
+            </div>
+          )}
+
+          {!loading && error && (
+            <div className="rounded-[22px] border border-[#F1F2F6] bg-white p-6 text-center text-ngekos-gray">
+              <p className="font-semibold text-ngekos-black mb-1">Butuh login</p>
+              <p className="text-sm">Silakan login untuk melihat notifikasi Anda.</p>
+              <div className="pt-3">
+                <Link href="/login" className="inline-block rounded-full px-4 py-2 bg-ngekos-orange text-white font-semibold">Login</Link>
+              </div>
+            </div>
+          )}
+
+          {!loading && !error && filteredNotifications.length > 0 ? (
             filteredNotifications.map((notification) => (
               <Link href="#" key={notification.id} className="card">
                 <div
@@ -186,13 +182,8 @@ export default function Notifications() {
                       notification.read ? "bg-ngekos-almostwhite" : "bg-orange-50"
                     }`}
                   >
-                    <Image
-                      src={`/images/icons/${notification.icon}`}
-                      alt={`${notification.type} notification icon`}
-                      width={24}
-                      height={24}
-                      className="h-6 w-6 object-contain"
-                    />
+                    <Image src={`/images/icons/${notification.icon || (notification.type === 'promotion' ? 'notification.svg' : 'order.svg')}`}
+                      alt={`${notification.type} notification icon`} width={24} height={24} className="h-6 w-6 object-contain" />
                   </div>
                   <div className="flex-grow space-y-1">
                     <div className="flex items-start justify-between gap-2">
@@ -201,7 +192,7 @@ export default function Notifications() {
                           !notification.read ? "font-bold" : ""
                         }`}
                       >
-                        {notification.title}
+                        {notification.title || notification.type}
                       </h3>
                       {!notification.read && (
                         <div className="h-2 w-2 rounded-full bg-ngekos-orange shrink-0 mt-1.5"></div>
@@ -214,7 +205,7 @@ export default function Notifications() {
                     >
                       {notification.message}
                     </p>
-                    <p className="text-ngekos-gray text-xs pt-1">{notification.time}</p>
+                    <p className="text-ngekos-gray text-xs pt-1">{notification.timeAgo || new Date(notification.createdAt).toLocaleString()}</p>
                   </div>
                 </div>
               </Link>
@@ -236,6 +227,11 @@ export default function Notifications() {
                   You're all caught up! Check back later for updates.
                 </p>
               </div>
+            </div>
+          )}
+          {!loading && !error && hasMore && (
+            <div className="flex justify-center">
+              <button onClick={() => setPage((p) => p + 1)} className="rounded-full px-4 py-2 bg-ngekos-orange text-white font-semibold">Load more</button>
             </div>
           )}
         </section>

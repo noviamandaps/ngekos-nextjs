@@ -2,11 +2,21 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { apiClient } from "@/lib/api-client";
 
 export default function Find() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState("all");
+  const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
+  const [selectedFacilities, setSelectedFacilities] = useState<string[]>([]);
+  const [cities, setCities] = useState<Array<{ id: string; name: string }>>([]);
+  const [selectedCity, setSelectedCity] = useState<string | null>(null);
+  const [sortOption, setSortOption] = useState<string>("newest");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<any[]>([]);
 
   const filters = [
     { id: "all", label: "All", icon: "discover.svg" },
@@ -31,35 +41,93 @@ export default function Find() {
     { name: "Security", icon: "notification.svg" },
   ];
 
-  const searchResults = [
-    {
-      name: "Kos Modern Minimalis",
-      image: "/images/thumbnails/home1.png",
-      location: "Jakarta Selatan",
-      type: "Flats",
-      capacity: "2 People",
-      price: "Rp 3.500.000",
-      rating: "4.5",
-    },
-    {
-      name: "Villa Sejahtera Asri",
-      image: "/images/thumbnails/home2.png",
-      location: "Bogor City",
-      type: "Villas",
-      capacity: "4 People",
-      price: "Rp 5.800.000",
-      rating: "4.8",
-    },
-    {
-      name: "Hotel Kos Nyaman",
-      image: "/images/thumbnails/home3.png",
-      location: "Bandung",
-      type: "Hotels",
-      capacity: "3 People",
-      price: "Rp 4.200.000",
-      rating: "4.6",
-    },
-  ];
+  function resolveImageSrc(src?: string) {
+    if (!src) return "/images/thumbnails/home1.png";
+    try {
+      if (/^https?:\/\//i.test(src)) return src;
+      if (src.startsWith("/")) return src;
+      return `/images/thumbnails/${src}`;
+    } catch {
+      return "/images/thumbnails/home1.png";
+    }
+  }
+
+  const applyFiltersClientSide = useMemo(() => {
+    let filtered = [...results];
+    // Facilities filter (client-side)
+    if (selectedFacilities.length > 0) {
+      filtered = filtered.filter((item) => {
+        const facs = (item.facilities || []).map((f: any) => f.name?.toLowerCase());
+        return selectedFacilities.every((sf) => facs.includes(sf.toLowerCase()));
+      });
+    }
+    return filtered;
+  }, [results, selectedFacilities]);
+
+  // Debounce search input
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  // Fetch cities once
+  useEffect(() => {
+    const fetchCities = async () => {
+      try {
+        const resp = await apiClient.getCities();
+        if (resp.success && Array.isArray(resp.data)) {
+          const mapped = (resp.data as any[]).map((c) => ({ id: c.id, name: c.name }));
+          setCities(mapped);
+        }
+      } catch (e) {
+        // optional
+      }
+    };
+    fetchCities();
+  }, []);
+
+  useEffect(() => {
+    const fetchResults = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Map type filter
+        const typeParam = selectedFilter !== "all" ? selectedFilter.toUpperCase() : undefined;
+
+        // Map price filter
+        let minPrice: number | undefined;
+        let maxPrice: number | undefined;
+        if (selectedPrice) {
+          const [min, max] = selectedPrice.split("-");
+          if (min) minPrice = Number(min);
+          if (max && max !== "+") maxPrice = Number(max);
+        }
+
+        const resp = await apiClient.getProperties({
+          search: debouncedQuery || undefined,
+          city: selectedCity || undefined,
+          type: typeParam,
+          minPrice,
+          maxPrice,
+          sortBy: sortOption === 'price_asc' || sortOption === 'price_desc' ? 'price' : 'createdAt',
+          sortOrder: sortOption === 'price_asc' ? 'asc' : sortOption === 'price_desc' ? 'desc' : 'desc',
+          limit: 20,
+        });
+        if (resp.success && resp.data) {
+          setResults(resp.data as any[]);
+        } else {
+          setResults([]);
+        }
+      } catch (e: any) {
+        // Perlakukan error sebagai data kosong agar UX lebih ramah
+        setResults([]);
+        setError(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchResults();
+  }, [debouncedQuery, selectedFilter, selectedPrice, selectedCity, sortOption]);
 
   return (
     <div className="mx-auto min-h-screen max-w-[640px] px-5 pb-9 pt-[60px] relative bg-white">
@@ -105,24 +173,53 @@ export default function Find() {
           </div>
 
           {/* Search bar */}
-          <div className="relative">
-            <div className="flex items-center gap-3 rounded-full bg-white border border-[#F1F2F6] px-5 py-4 shadow-sm">
-              <Image
-                src="/images/icons/find.svg"
-                alt="Search icon"
-                width={24}
-                height={24}
-                className="h-6 w-6 shrink-0"
-              />
-              <input
-                type="text"
-                placeholder="Search by location, name, or type..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="flex-grow bg-transparent outline-none text-ngekos-black placeholder:text-ngekos-gray"
-              />
-            </div>
+        <div className="relative">
+          <div className="flex items-center gap-3 rounded-full bg-white border border-[#F1F2F6] px-5 py-4 shadow-sm">
+            <Image
+              src="/images/icons/find.svg"
+              alt="Search icon"
+              width={24}
+              height={24}
+              className="h-6 w-6 shrink-0"
+            />
+            <input
+              type="text"
+              placeholder="Search by location, name, or type..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-grow bg-transparent outline-none text-ngekos-black placeholder:text-ngekos-gray"
+            />
           </div>
+        </div>
+
+        {/* City & Sort */}
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <label className="text-xs text-ngekos-gray">City</label>
+            <select
+              value={selectedCity || ''}
+              onChange={(e) => setSelectedCity(e.target.value || null)}
+              className="w-full rounded-[14px] border border-[#F1F2F6] px-4 py-2 bg-white"
+            >
+              <option value="">All Cities</option>
+              {cities.map((c) => (
+                <option key={c.id} value={c.name}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="w-[180px]">
+            <label className="text-xs text-ngekos-gray">Sort</label>
+            <select
+              value={sortOption}
+              onChange={(e) => setSortOption(e.target.value)}
+              className="w-full rounded-[14px] border border-[#F1F2F6] px-4 py-2 bg-white"
+            >
+              <option value="newest">Terbaru</option>
+              <option value="price_asc">Harga Termurah</option>
+              <option value="price_desc">Harga Termahal</option>
+            </select>
+          </div>
+        </div>
 
           {/* Filter chips */}
           <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
@@ -156,7 +253,12 @@ export default function Find() {
             {priceRanges.map((range) => (
               <button
                 key={range.value}
-                className="rounded-[22px] border border-[#F1F2F6] bg-white px-4 py-3 text-sm font-medium text-ngekos-black transition-all hover:border-ngekos-green hover:bg-ngekos-almostwhite"
+                onClick={() => setSelectedPrice(range.value)}
+                className={`rounded-[22px] border px-4 py-3 text-sm font-medium transition-all ${
+                  selectedPrice === range.value
+                    ? 'border-ngekos-green bg-ngekos-almostwhite text-ngekos-black'
+                    : 'border-[#F1F2F6] bg-white text-ngekos-black hover:border-ngekos-green hover:bg-ngekos-almostwhite'
+                }`}
               >
                 {range.label}
               </button>
@@ -171,7 +273,18 @@ export default function Find() {
             {facilities.map((facility) => (
               <button
                 key={facility.name}
-                className="flex items-center gap-2 rounded-full border border-[#F1F2F6] bg-white px-4 py-2 text-sm font-medium text-ngekos-black transition-all hover:border-ngekos-green hover:bg-ngekos-almostwhite"
+                onClick={() => {
+                  setSelectedFacilities((prev) =>
+                    prev.includes(facility.name)
+                      ? prev.filter((f) => f !== facility.name)
+                      : [...prev, facility.name]
+                  );
+                }}
+                className={`flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all ${
+                  selectedFacilities.includes(facility.name)
+                    ? 'border-ngekos-green bg-ngekos-almostwhite text-ngekos-black'
+                    : 'border-[#F1F2F6] bg-white text-ngekos-black hover:border-ngekos-green hover:bg-ngekos-almostwhite'
+                }`}
               >
                 <Image
                   src={`/images/icons/${facility.icon}`}
@@ -190,23 +303,48 @@ export default function Find() {
         <section className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-ngekos-black">
-              Search Results ({searchResults.length})
+              Search Results ({applyFiltersClientSide.length})
             </h3>
-            <button className="text-sm text-ngekos-orange font-semibold">
+            <button
+              className="text-sm text-ngekos-orange font-semibold"
+              onClick={() => {
+                setSelectedFilter('all');
+                setSelectedPrice(null);
+                setSelectedFacilities([]);
+                setSearchQuery('');
+                setSelectedCity(null);
+                setSortOption('newest');
+              }}
+            >
               Clear Filters
             </button>
           </div>
 
           <div className="flex flex-col gap-4">
-            {searchResults.map((result, index) => (
-              <Link href="#" key={index} className="card">
+            {loading && (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ngekos-orange"></div>
+              </div>
+            )}
+            {!loading && applyFiltersClientSide.length === 0 && (
+              <div className="rounded-[22px] border border-[#F1F2F6] bg-white p-6 text-center text-ngekos-gray">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-ngekos-almostwhite">
+                  <Image src="/images/icons/find.svg" alt="No results" width={24} height={24} />
+                </div>
+                <p className="font-semibold text-ngekos-black mb-1">Tidak ada kos yang tersedia</p>
+                <p className="text-sm">Coba ubah kata kunci atau sesuaikan filter harga/tipe.</p>
+              </div>
+            )}
+            {!loading && applyFiltersClientSide.map((result, index) => (
+              <Link href={`/kos/${result.id}`} key={index} className="card">
                 <div className="flex gap-4 rounded-[30px] border border-[#F1F2F6] bg-white p-4 transition-all duration-300 hover:border-[#91bf77]">
                   <div className="relative flex h-[140px] w-[110px] shrink-0 items-center justify-center overflow-hidden rounded-[22px] bg-[#D9D9D9]">
                     <Image
-                      src={result.image}
+                      src={resolveImageSrc(result.image)}
                       alt={`Photo of ${result.name}`}
                       width={110}
                       height={140}
+                      sizes="110px"
                       className="h-full w-full object-cover"
                     />
                     <div className="absolute top-2 right-2 flex items-center gap-1 rounded-full bg-white px-2 py-1">
@@ -257,7 +395,7 @@ export default function Find() {
                       <p className="text-ngekos-gray text-xs">{result.capacity}</p>
                     </div>
                     <p className="text-ngekos-orange text-base font-semibold mt-auto">
-                      {result.price}
+                      {result.priceFormatted}
                       <span className="text-ngekos-gray text-xs font-normal">/bulan</span>
                     </p>
                   </div>

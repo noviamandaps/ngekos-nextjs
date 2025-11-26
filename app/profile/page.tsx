@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { apiClient } from "@/lib/api-client";
 
 export default function Profile() {
   const router = useRouter();
@@ -58,6 +59,10 @@ export default function Profile() {
   ];
 
   const handleLogout = () => {
+    try {
+      // Hapus token auth dari localStorage agar sesi benar-benar berakhir
+      apiClient.removeToken();
+    } catch {}
     router.push("/login");
   };
 
@@ -101,7 +106,7 @@ export default function Profile() {
               <p className="text-ngekos-gray text-sm">john.doe@email.com</p>
               <p className="text-ngekos-gray text-xs mt-1">+62 812-3456-7890</p>
             </div>
-            <Link href="#" className="text-ngekos-orange font-semibold text-sm">
+            <Link href="/profile/edit" className="text-ngekos-orange font-semibold text-sm">
               Edit
             </Link>
           </div>

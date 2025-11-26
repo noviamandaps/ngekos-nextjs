@@ -4,13 +4,74 @@ import Link from "next/link";
 import Image from "next/image";
 import { Swiper, SwiperSlide } from "swiper/react";
 import "swiper/css";
-import { kosListings } from "./../lib/kosData";
+import { useState, useEffect } from "react";
+import { apiClient } from "../lib/api-client";
+
+interface KosProperty {
+  id: string;
+  name: string;
+  location: string;
+  city: string;
+  type: string;
+  capacity: string;
+  price: number;
+  priceFormatted: string;
+  rating: number;
+  image: string;
+  images: string[];
+  description?: string;
+  facilities: Array<{ name: string; icon: string }>;
+}
+
+interface City {
+  id: string;
+  name: string;
+  image: string;
+  propertyCount: number;
+}
 
 export default function Home() {
-  // Get first 3 kos for Popular Kos section
-  const popularKos = kosListings.slice(0, 3);
-  // Get different 3 kos for All Great Koskos section
-  const allGreatKos = kosListings.slice(3, 6);
+  const [popularKos, setPopularKos] = useState<KosProperty[]>([]);
+  const [allGreatKos, setAllGreatKos] = useState<KosProperty[]>([]);
+  const [cities, setCities] = useState<City[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch properties
+        const propertiesResponse = await apiClient.getProperties({ limit: 10 });
+        if (propertiesResponse.success && propertiesResponse.data) {
+          const properties = propertiesResponse.data as KosProperty[];
+          setPopularKos(properties.slice(0, 3));
+          setAllGreatKos(properties.slice(0, 3)); // Use same for demo, can be adjusted
+        }
+
+        // Fetch cities
+        const citiesResponse = await apiClient.getCities();
+        if (citiesResponse.success && citiesResponse.data) {
+          setCities(citiesResponse.data as City[]);
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-ngekos-orange mx-auto"></div>
+          <p className="mt-4 text-ngekos-gray">Loading...</p>
+        </div>
+      </div>
+    );
+  }
   return (
     <main className="relative mx-auto w-full max-w-[640px] overflow-x-hidden bg-white">
       <div
@@ -171,7 +232,7 @@ export default function Home() {
                       </div>
                       <hr className="border-[#F1F2F6]" />
                       <p className="text-ngekos-orange text-lg font-semibold">
-                        {kos.price}
+                        {kos.priceFormatted}
                         <span className="text-ngekos-gray text-sm font-normal">/bulan</span>
                       </p>
                     </div>
@@ -285,7 +346,7 @@ export default function Home() {
                   </div>
                   <hr className="border-[#F1F2F6]" />
                   <p className="text-ngekos-orange text-lg font-semibold">
-                    {kos.price}
+                    {kos.priceFormatted}
                     <span className="text-ngekos-gray text-sm font-normal">/bulan</span>
                   </p>
                 </div>

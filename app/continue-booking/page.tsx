@@ -2,9 +2,41 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { getKosById } from "@/lib/kosData";
+import { apiClient } from "@/lib/api-client";
+
+interface KosProperty {
+  id: string;
+  name: string;
+  location: string;
+  city: string;
+  address: string;
+  type: string;
+  capacity: string;
+  price: number;
+  priceFormatted: string;
+  rating: number;
+  image: string;
+  images: string[];
+  rooms: Array<{
+    id: string;
+    name: string;
+    image: string;
+    people: string;
+    size: string;
+    price: number;
+    priceFormatted: string;
+    available: boolean;
+  }>;
+}
+
+// Normalize image src to be compatible with next/image
+function resolveImageSrc(src?: string) {
+  if (!src) return "/images/thumbnails/home1.png";
+  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("/")) return src;
+  return `/images/thumbnails/${src}`;
+}
 
 // Komponen loading sederhana
 function LoadingBooking() {
@@ -19,13 +51,40 @@ function LoadingBooking() {
 function BookingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const kosId = searchParams.get("kosId") || "kos-3";
-  const roomId = searchParams.get("roomId") || "deluxe";
+  const kosId = searchParams.get("kosId") || "";
+  const roomId = searchParams.get("roomId") || "";
 
-  const kosData = getKosById(kosId);
-  const selectedRoom = kosData?.rooms.find(r => r.id === roomId);
-  
-  return { kosData, selectedRoom, router };
+  const [kosData, setKosData] = useState<KosProperty | null>(null);
+  const [selectedRoom, setSelectedRoom] = useState<KosProperty["rooms"][number] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!kosId || !roomId) {
+        setError("Invalid booking parameters");
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await apiClient.getProperty(kosId);
+        if (res.success && res.data) {
+          const data = res.data as KosProperty;
+          setKosData(data);
+          setSelectedRoom(data.rooms.find(r => r.id === roomId) || null);
+        } else {
+          setError(res.error?.message || "Property not found");
+        }
+      } catch (err) {
+        setError("Failed to load booking data");
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [kosId, roomId]);
+
+  return { kosData, selectedRoom, router, loading, error };
 }
 
 export default function ContinueBooking() {
@@ -37,7 +96,7 @@ export default function ContinueBooking() {
 }
 
 function ContinueBookingContent() {
-  const { kosData, selectedRoom, router } = BookingContent();
+  const { kosData, selectedRoom, router, loading, error } = BookingContent();
   const [showSuccess, setShowSuccess] = useState(false);
 
   // Get today's date and one month later for default dates
@@ -79,6 +138,37 @@ function ContinueBookingContent() {
       [e.target.name]: e.target.value,
     });
   };
+
+  if (loading) {
+    return (
+      <div className="mx-auto min-h-screen max-w-[640px] px-5 pb-9 pt-[60px] relative bg-white">
+        <div className="flex flex-col items-center justify-center h-screen gap-4">
+          <p className="text-lg font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!kosData || !selectedRoom || error) {
+    return (
+      <div className="mx-auto min-h-screen max-w-[640px] px-5 pb-9 pt-[60px] relative bg-white">
+        <div className="flex flex-col items-center justify-center h-screen gap-4">
+          <Image
+            src="/images/icons/notification.svg"
+            alt="Not found icon"
+            width={60}
+            height={60}
+          />
+          <h2 className="text-xl font-bold text-ngekos-black">Booking Data Not Found</h2>
+          <Link href="/available-room">
+            <button className="rounded-full px-6 py-3 bg-ngekos-orange text-white font-semibold">
+              Back to Rooms
+            </button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto min-h-screen max-w-[640px] px-5 pb-9 pt-[60px] relative bg-white">
@@ -140,13 +230,13 @@ function ContinueBookingContent() {
           <section className="rounded-[30px] border border-[#F1F2F6] bg-white p-4 shadow-sm">
             <div className="flex gap-4">
               <div className="flex h-[100px] w-[80px] shrink-0 items-center justify-center overflow-hidden rounded-[22px] bg-[#D9D9D9]">
-                <Image
-                  src={kosData.image}
-                  alt={`Photo of ${kosData.name}`}
-                  width={80}
-                  height={100}
-                  className="h-full w-full object-cover"
-                />
+                 <Image
+                   src={resolveImageSrc(kosData.image)}
+                   alt={`Photo of ${kosData.name}`}
+                   width={80}
+                   height={100}
+                   className="h-full w-full object-cover"
+                 />
               </div>
               <div className="flex flex-col gap-2 flex-grow">
                 <h3 className="font-semibold text-ngekos-black leading-tight">
@@ -163,7 +253,7 @@ function ContinueBookingContent() {
                   <p className="text-ngekos-gray text-sm">{selectedRoom.name}</p>
                 </div>
                 <p className="text-ngekos-orange text-base font-semibold">
-                  Rp {selectedRoom.priceNumber.toLocaleString()}<span className="text-ngekos-gray text-xs font-normal">/month</span>
+                  {selectedRoom.priceFormatted}<span className="text-ngekos-gray text-xs font-normal">/month</span>
                 </p>
               </div>
             </div>
@@ -375,7 +465,7 @@ function ContinueBookingContent() {
               <div className="space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-ngekos-gray">Monthly Rent</span>
-                  <span className="font-medium text-ngekos-black">Rp {selectedRoom.priceNumber.toLocaleString()}</span>
+                  <span className="font-medium text-ngekos-black">Rp {selectedRoom.price.toLocaleString('id-ID')}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-ngekos-gray">Service Fee</span>
@@ -383,12 +473,12 @@ function ContinueBookingContent() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-ngekos-gray">Admin Fee</span>
-                  <span className="font-medium text-ngekos-black">Rp {Math.round(selectedRoom.priceNumber * 0.01).toLocaleString()}</span>
+                  <span className="font-medium text-ngekos-black">Rp {Math.round(selectedRoom.price * 0.01).toLocaleString('id-ID')}</span>
                 </div>
                 <hr className="border-[#F1F2F6]" />
                 <div className="flex justify-between">
                   <span className="font-bold text-ngekos-black">Total</span>
-                  <span className="font-bold text-ngekos-orange text-lg">Rp {(selectedRoom.priceNumber + 50000 + Math.round(selectedRoom.priceNumber * 0.01)).toLocaleString()}</span>
+                  <span className="font-bold text-ngekos-orange text-lg">Rp {(selectedRoom.price + 50000 + Math.round(selectedRoom.price * 0.01)).toLocaleString('id-ID')}</span>
                 </div>
               </div>
             </section>

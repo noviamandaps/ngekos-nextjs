@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { apiClient } from "@/lib/api-client";
 
 export default function Login() {
   const router = useRouter();
@@ -12,13 +13,36 @@ export default function Login() {
     password: "",
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simple validation - in real app would validate against backend
-    if (formData.username && formData.password) {
-      // Redirect to discover page
-      router.push("/");
+    setLoading(true);
+    setError("");
+
+    try {
+      const response = await apiClient.login(formData.username, formData.password);
+
+      if (response.success && response.data) {
+        const token = (response.data as { token: string }).token;
+
+        // Set token and user data
+        apiClient.setToken(token);
+
+        // Debug: Check if token is set properly
+        console.log("Token being set:", token);
+        console.log("Token after setting:", apiClient.getToken());
+
+        // Redirect to discover page
+        router.push("/");
+      } else {
+        setError(response.error?.message || "Login failed");
+      }
+    } catch (err: any) {
+      setError(err.message || "An error occurred during login");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -120,12 +144,20 @@ export default function Login() {
               </Link>
             </div>
 
+            {/* Error message */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-[22px] text-sm">
+                {error}
+              </div>
+            )}
+
             {/* Login button */}
             <button
               type="submit"
-              className="w-full rounded-full py-4 bg-ngekos-orange text-white font-bold shadow-md hover:bg-ngekos-green transition-all"
+              disabled={loading}
+              className="w-full rounded-full py-4 bg-ngekos-orange text-white font-bold shadow-md hover:bg-ngekos-green transition-all disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Sign In
+              {loading ? "Signing In..." : "Sign In"}
             </button>
           </form>
 
