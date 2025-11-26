@@ -5,7 +5,7 @@ import { createSuccessResponse, createErrorResponse } from '@/lib/api-response'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Authenticate user
@@ -17,7 +17,7 @@ export async function GET(
       )
     }
 
-    const { id } = params
+    const { id } = await params
 
     if (!id) {
       return NextResponse.json(
